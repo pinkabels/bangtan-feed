@@ -1,0 +1,40 @@
+# Secrets
+.env
+
+# Local Scripts
+*.sh
+
+# Virtual Environment
+.venv/
+venv/
+
+# Databases
+data/
+*.db
+*.db.bak
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+logs/
+
+# Backups
+*.bak
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+
+# SSH keys
+*.pem
+id_rsa
+id_ed25519
