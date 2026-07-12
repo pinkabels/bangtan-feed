@@ -58,10 +58,15 @@ cp .env.example .env
 ```
 Edit `.env` and define your Discord webhooks.
 
+Logger:
+```bash
+mkdir logs
+```
+
 ## Running
 
 ```bash
-sudo chmod +x bangtan.sh
+chmod +x bangtan.sh
 ```
 ```bash
 ./bangtan.sh
