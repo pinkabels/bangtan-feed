@@ -36,6 +36,7 @@ Clone the repository:
 ```bash
 git clone git@github.com:pinkabels/bangtan-feed.git
 cd bangtan-feed
+mkdir data
 ```
 
 Create a virtual environment:
@@ -76,10 +77,14 @@ chmod +x bangtan.sh
 
 ```text
 bangtan-feed/
+├── data/
+│   └── social.db
 ├── fetchers/
 │   ├── instagram.py
 │   ├── twitter.py
 │   └── youtube.py
+├── logs/
+│   └── BTS.log
 ├── services/
 │   ├── db.py
 │   └── webhook.py
