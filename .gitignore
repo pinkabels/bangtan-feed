@@ -2,7 +2,7 @@
 .env
 
 # Local Scripts
-*.sh
+feed.sh
 
 # Virtual Environment
 .venv/
