@@ -14,16 +14,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
 KST = timezone(
     timedelta(hours=9),
     "UTC+9"
 )
 
-webhook = discord.SyncWebhook.from_url(
-    WEBHOOK_URL
-)
+WEBHOOKS = [
+    discord.SyncWebhook.from_url(url.strip())
+    for url in os.getenv("WEBHOOKS", "").split(",")
+    if url.strip()
+]
+
+if not WEBHOOKS:
+    raise RuntimeError("WEBHOOKS is not configured.")
+
+def send_to_all(**kwargs):
+    for webhook in WEBHOOKS:
+        if "file" in kwargs:
+            path = kwargs["file"].fp.name
+
+            new_kwargs = kwargs.copy()
+            new_kwargs["file"] = discord.File(path)
+
+            webhook.send(**new_kwargs)
+        else:
+            webhook.send(**kwargs)
 
 
 def notify(post):
@@ -33,7 +48,7 @@ def notify(post):
         if "header" in post:
             content = f"{post['header']}\n{post['url']}"
 
-        webhook.send(content)
+        send_to_all(content=content)
         return
 
     embed = discord.Embed(
@@ -93,7 +108,7 @@ def notify(post):
     try:
         if video_path:
             try:
-                webhook.send(
+                send_to_all(
                     embed=embed,
                     file=discord.File(video_path)
                 )
@@ -104,13 +119,13 @@ def notify(post):
                 if media:
                     embed.set_image(url=media[0]["url"])
                 try:
-                    webhook.send(embed=embed)
+                    send_to_all(embed=embed)
                     print("[INFO] Sent thumbnail fallback.")
-                except Exception as e:
+                except Exception:
                     import traceback
                     traceback.print_exc()
         else:
-            webhook.send(embed=embed)
+            send_to_all(embed=embed)
 
     finally:
         if video_path:
