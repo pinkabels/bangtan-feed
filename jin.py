@@ -65,13 +65,25 @@ def check_accounts():
     for row in get_accounts():
         log(str(row))
 
+    instagram_backoff = False
+
     for platform, username in accounts:
 
         if platform == "instagram":
+            if instagram_backoff:
+                log(f"[SKIP] {username} (Instagram backoff)")
+                continue
+
             delay = random.randint(15, 30)
             log(f"[WAIT] {username} ({delay}s)")
             time.sleep(delay)
+
             posts = fetch_instagram(username)
+
+            if not posts:
+                instagram_backoff = True
+                log("[WARN] Instagram rate limit detected; skipping remaining Instagram accounts this poll.")
+                continue
 
         elif platform == "twitter":
             posts = fetch_twitter(username)
