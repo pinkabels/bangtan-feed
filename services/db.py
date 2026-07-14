@@ -99,7 +99,7 @@ def mark_seen_post(username, post_id):
             FROM seen_posts
             WHERE username = ?
             ORDER BY rowid DESC
-            LIMIT 5
+            LIMIT 50
         )
         AND username = ?
         """,

@@ -7,6 +7,7 @@
 import yaml
 import time
 import random
+from datetime import datetime
 from services.webhook import notify
 from services.db import (
     init,
@@ -22,11 +23,17 @@ from fetchers.twitter import fetch as fetch_twitter
 from fetchers.youtube import fetch as fetch_youtube
 
 
+def log(message):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{now}] {message}")
+
 def check_accounts():
     init()
 
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
+
+    log("=== Poll started ===")
 
     accounts = []
 
@@ -52,20 +59,15 @@ def check_accounts():
             f"{platform}:{username}"
         )
 
-    print("Configured accounts:")
+    log("Configured accounts:")
 
     for platform, username in accounts:
-        print(
-            f" • {platform:<10} {username}"
-        )
+        log(f" • {platform:<10} {username}")
 
-    print()
-    print("Database contents:")
+    log("Database contents:")
 
     for row in get_accounts():
-        print(row)
-
-    print()
+        log(str(row))
 
     for platform, username in accounts:
 
@@ -98,13 +100,13 @@ def check_accounts():
             new_found = True
 
             if previous is None:
-                print(
+                log(
                     f"[INIT] {username}: "
                     f"{post['post_id']}"
                 )
             else:
-                print(f"[NEW] {username}")
-                print(post["url"])
+                log(f"[NEW] {username}")
+                log(post["url"])
                 notify(post)
 
             mark_seen_post(
@@ -118,11 +120,10 @@ def check_accounts():
         )
 
         if not new_found:
-            print(
-                f"[OK] "
-                f"{username} "
-                f"unchanged"
-            )
+            log(f"[OK] {username} unchanged")
+
+    log("=== Poll finished ===")
+    log("=" * 60)
 
 if __name__ == "__main__":
     with open("config.yaml") as f:
