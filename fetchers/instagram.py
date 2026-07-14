@@ -6,7 +6,7 @@
 # ----------------------------
 import json
 import subprocess
-
+from services.logger import log
 
 def fetch(username):
     url = (
@@ -31,35 +31,21 @@ def fetch(username):
         data = json.loads(out)
 
     except Exception as e:
-        print(
-            f"Instagram error {username}: {e}"
-        )
+        log(f"Instagram error {username}: {e}")
         return []
 
     if "data" not in data:
-        print(
-            f"\nInstagram returned an unexpected response for {username}:"
-        )
-        print(
-            json.dumps(
-                data,
-                indent=2
-            )[:1000]
-        )
+        log(f"Instagram returned an unexpected response for {username}:")
+        log("Response:")
+        log(json.dumps(data, indent=2)[:1000])
         return []
 
     user = data["data"].get("user")
 
     if not user:
-        print(
-            f"\nInstagram returned no user object for {username}:"
-        )
-        print(
-            json.dumps(
-                data,
-                indent=2
-            )[:1000]
-        )
+        log(f"Instagram returned no user object for {username}:")
+        log("Response:")
+        log(json.dumps(data, indent=2)[:1000])
         return []
 
     edges = (

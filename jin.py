@@ -7,7 +7,7 @@
 import yaml
 import time
 import random
-from datetime import datetime
+from services.logger import log
 from services.webhook import notify
 from services.db import (
     init,
@@ -22,10 +22,6 @@ from fetchers.instagram import fetch as fetch_instagram
 from fetchers.twitter import fetch as fetch_twitter
 from fetchers.youtube import fetch as fetch_youtube
 
-
-def log(message):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{now}] {message}")
 
 def check_accounts():
     init()
@@ -72,8 +68,10 @@ def check_accounts():
     for platform, username in accounts:
 
         if platform == "instagram":
+            delay = random.randint(15, 30)
+            log(f"[WAIT] {username} ({delay}s)")
+            time.sleep(delay)
             posts = fetch_instagram(username)
-            time.sleep(random.randint(8, 15))
 
         elif platform == "twitter":
             posts = fetch_twitter(username)
