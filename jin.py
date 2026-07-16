@@ -21,6 +21,7 @@ from services.db import (
 from fetchers.instagram import fetch as fetch_instagram
 from fetchers.twitter import fetch as fetch_twitter
 from fetchers.youtube import fetch as fetch_youtube
+from fetchers.yt_posts import fetch as fetch_yt_posts
 
 
 def check_accounts():
@@ -46,6 +47,11 @@ def check_accounts():
     for channel in config.get("youtube", []):
         accounts.append(
             ("youtube", channel)
+        )
+
+    for handle in config.get("youtube_posts", []):
+        accounts.append(
+            ("youtube_posts", handle)
         )
 
     random.shuffle(accounts)
@@ -90,6 +96,9 @@ def check_accounts():
 
         elif platform == "youtube":
             posts = fetch_youtube(username)
+
+        elif platform == "youtube_posts":
+            posts = fetch_yt_posts(username)
 
         else:
             continue

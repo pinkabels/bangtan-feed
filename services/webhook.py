@@ -8,7 +8,7 @@ import os
 import tempfile
 import requests
 import discord
-
+from services.logger import log
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -49,6 +49,31 @@ def notify(post):
             content = f"{post['header']}\n{post['url']}"
 
         send_to_all(content=content)
+        return
+
+    if post.get("platform") == "youtube_posts":
+        content = (
+            f"{post['header']}\n\n"
+            f"{post['caption']}"
+        )
+
+        if post.get("timestamp"):
+            content += (
+                "\n────────────────\n"
+                f"{post['timestamp']}"
+            )
+
+        if post.get("image_url") and content:
+            embed = discord.Embed(
+                color=0xd58af4,
+            )
+            embed.set_image(
+                url=post["image_url"]
+            )
+            send_to_all(content=content, embed=embed)
+        else:
+            send_to_all(content=content)
+
         return
 
     embed = discord.Embed(
@@ -113,17 +138,17 @@ def notify(post):
                     file=discord.File(video_path)
                 )
             except discord.HTTPException as e:
-                print(f"Discord upload failed: {e}")
+                log(f"Discord upload failed: {e}")
 
                 # Video too large: show the thumbnail instead.
                 if media:
                     embed.set_image(url=media[0]["url"])
                 try:
                     send_to_all(embed=embed)
-                    print("[INFO] Sent thumbnail fallback.")
+                    log("[INFO] Sent thumbnail fallback.")
                 except Exception:
                     import traceback
-                    traceback.print_exc()
+                    log(traceback.format_exc())
         else:
             send_to_all(embed=embed)
 
