@@ -30,16 +30,22 @@ if not WEBHOOKS:
 
 def send_to_all(**kwargs):
     for webhook in WEBHOOKS:
+        new_kwargs = kwargs.copy()
+
         if "file" in kwargs:
             path = kwargs["file"].fp.name
-
-            new_kwargs = kwargs.copy()
             new_kwargs["file"] = discord.File(path)
 
-            webhook.send(**new_kwargs)
-        else:
-            webhook.send(**kwargs)
+        elif "files" in kwargs:
+            new_kwargs["files"] = [
+                discord.File(path)
+                for path in (
+                    file.fp.name
+                    for file in kwargs["files"]
+                )
+            ]
 
+        webhook.send(**new_kwargs)
 
 def notify(post):
     if "caption" not in post:
@@ -85,6 +91,8 @@ def notify(post):
 
     media = post.get("media", [])
     video_path = None
+    image_paths = []
+    thumbnail_path = None
 
     if media:
         first = media[0]
@@ -112,9 +120,26 @@ def notify(post):
             )
 
         else:
-            embed.set_image(
-                url=first["url"]
-            )
+            for item in media[:4]:
+                if item.get("is_video"):
+                    continue
+
+                image_url = item.get("url")
+                if not image_url:
+                    continue
+
+                response = requests.get(
+                    image_url,
+                    timeout=60,
+                )
+                response.raise_for_status()
+
+                with tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=".jpg",
+                ) as f:
+                    f.write(response.content)
+                    image_paths.append(f.name)
 
     if post.get("timestamp"):
         dt = datetime.fromtimestamp(
@@ -142,16 +167,54 @@ def notify(post):
 
                 # Video too large: show the thumbnail instead.
                 if media:
-                    embed.set_image(url=media[0]["url"])
+                    thumbnail_url = media[0]["url"]
+
+                    response = requests.get(
+                        thumbnail_url,
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(
+                        delete=False,
+                        suffix=".jpg",
+                    ) as f:
+                        f.write(response.content)
+                        thumbnail_path = f.name
+
                 try:
-                    send_to_all(embed=embed)
+                    if thumbnail_path:
+                        send_to_all(
+                            embed=embed,
+                            files=[
+                                discord.File(thumbnail_path),
+                            ],
+                        )
+                    else:
+                        send_to_all(embed=embed)
+
                     log("[INFO] Sent thumbnail fallback.")
                 except Exception:
                     import traceback
                     log(traceback.format_exc())
+
+        elif image_paths:
+            send_to_all(
+                embed=embed,
+                files=[
+                    discord.File(path)
+                    for path in image_paths
+                ],
+            )
         else:
-            send_to_all(embed=embed)
+            send_to_all(embed=embed)                    
 
     finally:
         if video_path:
             os.remove(video_path)
+
+        for path in image_paths:
+            os.remove(path)
+
+        if thumbnail_path:
+            os.remove(thumbnail_path)
