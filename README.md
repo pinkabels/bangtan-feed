@@ -6,7 +6,9 @@ A lightweight Python bot that monitors BTS members' official social media accoun
 
 - Instagram
 - X (via fxtwitter RSS)
-- YouTube
+- YouTube videos
+- YouTube Community posts
+- TikTok (with native video uploads)
 
 The bot remembers previously seen posts using SQLite so duplicate notifications are never sent.
 
@@ -15,9 +17,10 @@ The bot remembers previously seen posts using SQLite so duplicate notifications 
 - Monitor multiple Instagram accounts
 - Monitor multiple X accounts
 - Monitor multiple YouTube channels
-- Send notifications to Discord via webhooks
-- Rich embeds for Instagram posts
-- Automatically falls back to thumbnails when Instagram videos exceed Discord's upload limit
+- Monitor multiple TikTok accounts
+- Send rich Discord webhook notifications
+- Rich embeds for Instagram and TikTok posts
+- Automatically falls back to thumbnails when Instagram/TikTok videos exceed Discord's upload limit
 - Prevent duplicate notifications with SQLite
 - Randomize polling order to reduce rate limiting
 - Configurable polling interval
@@ -27,6 +30,7 @@ The bot remembers previously seen posts using SQLite so duplicate notifications 
 
 - Python 3.11 or newer
 - SQLite
+- yt-dlp (for TikTok)
 - A Discord webhook
 
 ## Installation
@@ -81,12 +85,15 @@ bangtan-feed/
 │   └── social.db
 ├── fetchers/
 │   ├── instagram.py
+│   ├── tiktok.py
 │   ├── twitter.py
-│   └── youtube.py
+│   ├── youtube.py
+│   └── yt_posts.py
 ├── logs/
 │   └── BTS.log
 ├── services/
 │   ├── db.py
+│   ├── logger.py
 │   └── webhook.py
 ├── .env.example
 ├── .gitignore
@@ -101,6 +108,7 @@ bangtan-feed/
 ## Notes
 
 - Instagram requests may be rate-limited if polled too aggressively.
+- TikTok support uses yt-dlp to retrieve metadata and download videos for Discord uploads.
 - The bot randomizes account polling order and supports configurable delays between requests.
 - Oversized Instagram videos automatically fall back to sending the post thumbnail instead of failing.
 

@@ -8,6 +8,7 @@ import os
 import tempfile
 import requests
 import discord
+import subprocess
 from services.logger import log
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
@@ -79,6 +80,106 @@ def notify(post):
             send_to_all(content=content, embed=embed)
         else:
             send_to_all(content=content)
+
+        return
+
+    if post.get("platform") == "tiktok":
+        embed = discord.Embed(
+            title=f"🎵 TikTok • @{post['username']}",
+            url=post["url"],
+            description=post["caption"][:4000],
+            color=0xd58af4,
+        )
+
+        if post.get("timestamp"):
+            dt = datetime.fromtimestamp(
+                post["timestamp"],
+                tz=timezone.utc
+            ).astimezone(KST)
+
+            embed.set_footer(
+                text=(
+                    f"Posted on "
+                    f"{dt:%Y-%m-%d at %H:%M} "
+                    f"{dt.tzname()}"
+                )
+            )
+
+        video_path = None
+        thumbnail_path = None
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                subprocess.run(
+                    [
+                        "python",
+                        "-m",
+                        "yt_dlp",
+                        "--quiet",
+                        "--no-warnings",
+                        "-o",
+                        f"{tmpdir}/%(id)s.%(ext)s",
+                        post["url"],
+                    ],
+                    check=True,
+                    timeout=120,
+                    capture_output=True,
+                    text=True,
+                )
+
+                downloaded = next(
+                    os.path.join(tmpdir, f)
+                    for f in os.listdir(tmpdir)
+                    if f.endswith(".mp4")
+                )
+
+                with tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=".mp4",
+                ) as f:
+                    video_path = f.name
+
+                os.replace(
+                    downloaded,
+                    video_path,
+                )
+            try:
+                send_to_all(
+                    embed=embed,
+                    file=discord.File(video_path),
+                )
+
+            except discord.HTTPException as e:
+                log(f"Discord upload failed: {e}")
+                # Discord upload failed, fallback thumbnail
+                if post.get("thumbnail"):
+                    response = requests.get(
+                        post["thumbnail"],
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(
+                        delete=False,
+                        suffix=".jpg",
+                    ) as f:
+                        f.write(response.content)
+                        thumbnail_path = f.name
+
+                if thumbnail_path:
+                    send_to_all(
+                        embed=embed,
+                        file=discord.File(thumbnail_path),
+                    )
+                    log("[INFO] Sent thumbnail fallback.")
+                else:
+                    send_to_all(embed=embed)
+
+        finally:
+            if video_path:
+                os.remove(video_path)
+            if thumbnail_path:
+                os.remove(thumbnail_path)
 
         return
 

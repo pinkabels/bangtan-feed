@@ -22,6 +22,7 @@ from fetchers.instagram import fetch as fetch_instagram
 from fetchers.twitter import fetch as fetch_twitter
 from fetchers.youtube import fetch as fetch_youtube
 from fetchers.yt_posts import fetch as fetch_yt_posts
+from fetchers.tiktok import fetch as fetch_tiktok
 
 
 def check_accounts():
@@ -52,6 +53,11 @@ def check_accounts():
     for handle in config.get("youtube_posts", []):
         accounts.append(
             ("youtube_posts", handle)
+        )
+
+    for user in config.get("tiktok", []):
+        accounts.append(
+            ("tiktok", user)
         )
 
     random.shuffle(accounts)
@@ -100,6 +106,12 @@ def check_accounts():
         elif platform == "youtube_posts":
             posts = fetch_yt_posts(username)
 
+        elif platform == "tiktok":
+            delay = random.randint(15, 30)
+            log(f"[WAIT] {username} ({delay}s)")
+            time.sleep(delay)
+            posts = fetch_tiktok(username)
+            
         else:
             continue
 
