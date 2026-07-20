@@ -88,7 +88,7 @@ def notify(post):
             title=f"🎵 TikTok • @{post['username']}",
             url=post["url"],
             description=post["caption"][:4000],
-            color=0xd58af4,
+            color=0x25F4EE,
         )
 
         if post.get("timestamp"):
@@ -101,7 +101,7 @@ def notify(post):
                 text=(
                     f"Posted on "
                     f"{dt:%Y-%m-%d at %H:%M} "
-                    f"{dt.tzname()}"
+                    f"{dt.tzname()} • pinkabels 💗"
                 )
             )
 
@@ -221,7 +221,7 @@ def notify(post):
             )
 
         else:
-            for item in media[:4]:
+            for item in media[:10]:
                 if item.get("is_video"):
                     continue
 
@@ -252,7 +252,7 @@ def notify(post):
             text=(
                 f"Instagram • "
                 f"{dt:%Y-%m-%d at %H:%M} "
-                f"{dt.tzname()}"
+                f"{dt.tzname()} • pinkabels 💗"
             )
         )
 
