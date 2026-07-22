@@ -84,11 +84,19 @@ def notify(post):
         return
 
     if post.get("platform") == "tiktok":
+        link = f"\n\n{post['url']}"
         embed = discord.Embed(
-            title=f"🎵 TikTok • @{post['username']}",
-            url=post["url"],
-            description=post["caption"][:4000],
+            description=(
+                f"{post['caption'][:4096 - len(link)]}"
+                f"{link}"
+            ),
             color=0x25F4EE,
+        )
+
+        embed.set_author(
+            name=f"@{post['username']}",
+            url=post["url"],
+            icon_url="https://raw.githubusercontent.com/pinkabels/bangtan-feed/main/assets/logo-tiktok.png"
         )
 
         if post.get("timestamp"):
@@ -99,7 +107,7 @@ def notify(post):
 
             embed.set_footer(
                 text=(
-                    f"Posted on "
+                    f"TikTok • "
                     f"{dt:%Y-%m-%d at %H:%M} "
                     f"{dt.tzname()} • pinkabels 💗"
                 )
@@ -183,12 +191,7 @@ def notify(post):
 
         return
 
-    embed = discord.Embed(
-        title=f"@{post['username']}",
-        url=post["url"],
-        description=post["caption"][:4000],
-        color=0xd58af4,
-    )
+    description = post["caption"]
 
     media = post.get("media", [])
     video_path = None
@@ -216,9 +219,7 @@ def notify(post):
                     f.write(response.content)
                     video_path = f.name
 
-            embed.description += (
-                "\n\n🎬 Video/Reel"
-            )
+            description += "\n\n🎬 Video/Reel"
 
         else:
             for item in media[:10]:
@@ -241,6 +242,20 @@ def notify(post):
                 ) as f:
                     f.write(response.content)
                     image_paths.append(f.name)
+
+    link = f"\n\n{post['url']}"
+    description = description[:4096 - len(link)] + link
+
+    embed = discord.Embed(
+        description=description,
+        color=0xd58af4,
+    )
+
+    embed.set_author(
+        name=f"{post['username']}",
+        url=post["url"],
+        icon_url="https://raw.githubusercontent.com/pinkabels/bangtan-feed/main/assets/logo-instagram.png"
+    )
 
     if post.get("timestamp"):
         dt = datetime.fromtimestamp(
