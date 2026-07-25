@@ -25,7 +25,7 @@ def fetch(username):
                 "yt_dlp",
                 "-J",
                 "--playlist-end",
-                "5",
+                "10",
                 url,
             ],
             capture_output=True,

@@ -15,7 +15,7 @@ def fetch(username):
 
     posts = []
 
-    for entry in feed.entries[:5]:
+    for entry in feed.entries[:10]:
         media = []
 
         for link in entry.get("links", []):

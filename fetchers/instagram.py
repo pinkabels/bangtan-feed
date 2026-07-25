@@ -55,7 +55,7 @@ def fetch(username):
 
     posts = []
 
-    for edge in edges[:5]:
+    for edge in edges[:10]:
         node = edge["node"]
 
         sidecar = (

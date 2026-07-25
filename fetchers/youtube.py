@@ -15,7 +15,7 @@ def fetch(channel_id):
 
     posts = []
 
-    for entry in feed.entries[:5]:
+    for entry in feed.entries[:10]:
         posts.append({
             "post_id": entry.yt_videoid,
             "url": entry.link,
