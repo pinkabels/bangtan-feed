@@ -136,10 +136,13 @@ def _make_post(item, username=None, fallback_url=None):
         or ""
     )
 
-    timestamp = (
-        item.get("createTime")
-        or item.get("createTimeISO")
-    )
+    timestamp = item.get("createTime")
+
+    if timestamp is not None:
+        try:
+            timestamp = int(timestamp)
+        except (TypeError, ValueError):
+            timestamp = None
 
     # Music title.
     music_name = (
