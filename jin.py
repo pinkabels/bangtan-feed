@@ -22,7 +22,7 @@ from fetchers.instagram import fetch as fetch_instagram
 from fetchers.twitter import fetch as fetch_twitter
 from fetchers.youtube import fetch as fetch_youtube
 from fetchers.yt_posts import fetch as fetch_yt_posts
-from fetchers.tiktok import fetch as fetch_tiktok
+from fetchers.tt import fetch as fetch_tiktok
 
 
 def check_accounts():
