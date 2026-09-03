@@ -8,10 +8,56 @@ import json
 import subprocess
 from services.logger import log
 
+
+def best_image_url(media):
+    candidates = (
+        media.get("image_versions2", {})
+        .get("candidates", [])
+    )
+
+    if not candidates:
+        return media.get("display_uri")
+
+    return max(
+        candidates,
+        key=lambda item: (
+            item.get("width", 0) * item.get("height", 0)
+        ),
+    ).get("url")
+
+
+def video_url(media):
+    versions = media.get("video_versions", [])
+
+    if not versions:
+        return None
+
+    # Instagram currently returns multiple encodings
+    # at the same resolution. Use the first standard variant.
+    return versions[0].get("url")
+
+
+def make_media(media):
+    videos = media.get("video_versions", [])
+
+    if videos:
+        return {
+            "url": best_image_url(media),
+            "video_url": video_url(media),
+            "is_video": True,
+        }
+
+    return {
+        "url": best_image_url(media),
+        "video_url": None,
+        "is_video": False,
+    }
+
+
 def fetch(username):
     url = (
-        "https://i.instagram.com/api/v1/"
-        f"users/web_profile_info/?username={username}"
+        "https://www.instagram.com/api/v1/"
+        f"feed/user/{username}/username/?count=10"
     )
 
     cmd = [
@@ -34,95 +80,51 @@ def fetch(username):
         log(f"Instagram error {username}: {e}")
         return []
 
-    if "data" not in data:
+    if "items" not in data:
         log(f"Instagram returned an unexpected response for {username}:")
         log("Response:")
         log(json.dumps(data, indent=2)[:1000])
         return []
 
-    user = data["data"].get("user")
-
-    if not user:
-        log(f"Instagram returned no user object for {username}:")
-        log("Response:")
-        log(json.dumps(data, indent=2)[:1000])
-        return []
-
-    edges = (
-        user["edge_owner_to_timeline_media"]
-        ["edges"]
-    )
-
     posts = []
 
-    for edge in edges[:10]:
-        node = edge["node"]
+    for item in data.get("items", [])[:10]:
+        shortcode = item.get("code")
 
-        sidecar = (
-            node.get(
-                "edge_sidecar_to_children",
-                {}
-            ).get(
-                "edges",
-                []
-            )
-        )
+        if not shortcode:
+            continue
 
+        caption_data = item.get("caption")
         caption = ""
 
-        caption_edges = (
-            node.get(
-                "edge_media_to_caption",
-                {}
-            ).get(
-                "edges",
-                []
-            )
-        )
+        if isinstance(caption_data, dict):
+            caption = caption_data.get("text", "")
+        elif isinstance(caption_data, str):
+            caption = caption_data
 
-        if caption_edges:
-            caption = (
-                caption_edges[0]
-                ["node"]
-                ["text"]
-            )
+        carousel = item.get("carousel_media", [])
 
-        media = []
-
-        if sidecar:
-            for item in sidecar:
-                child = item["node"]
-                media.append({
-                    "url": child.get("display_url"),
-                    "video_url": child.get("video_url"),
-                    "is_video": child.get(
-                        "is_video",
-                        False,
-                    ),
-                })
+        if carousel:
+            media = [
+                make_media(child)
+                for child in carousel
+            ]
         else:
-            media.append({
-                "url": node.get("display_url"),
-                "video_url": node.get("video_url"),
-                "is_video": node.get(
-                    "is_video",
-                    False,
-                ),
-            })
+            media = [
+                make_media(item)
+            ]
 
         posts.append({
             "platform": "instagram",
             "username": username,
-            "post_id": node["shortcode"],
+            "post_id": shortcode,
             "url": (
                 f"https://www.instagram.com/p/"
-                f"{node['shortcode']}/"
+                f"{shortcode}/"
             ),
             "caption": caption,
             "media": media,
-            "timestamp": node.get(
-                "taken_at_timestamp"
-            ),
+            "timestamp": item.get("taken_at"),
         })
 
     return posts
