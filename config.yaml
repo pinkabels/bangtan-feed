@@ -4,7 +4,7 @@
 # ----------------------------
 # config.yaml
 # ----------------------------
-poll_interval: 600
+poll_interval: 1800
 
 instagram:
   - bts.bighitofficial

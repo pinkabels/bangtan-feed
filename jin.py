@@ -86,7 +86,7 @@ def check_accounts():
                 log(f"[SKIP] {username} (Instagram backoff)")
                 continue
 
-            delay = random.randint(15, 30)
+            delay = 300
             log(f"[WAIT] {username} ({delay}s)")
             time.sleep(delay)
 
