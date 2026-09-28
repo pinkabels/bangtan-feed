@@ -62,6 +62,7 @@ def fetch(username):
 
     cmd = [
         "curl",
+        "-4",
         "-s",
         "-H", "User-Agent: Mozilla/5.0",
         "-H", "X-IG-App-ID: 936619743392459",
