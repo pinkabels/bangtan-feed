@@ -4,7 +4,7 @@
 # ----------------------------
 # config.yaml
 # ----------------------------
-poll_interval: 1800
+poll_interval: 3600
 
 instagram:
   - bts.bighitofficial
@@ -31,3 +31,4 @@ tiktok:
   - jungkook
   - tete
   - iamurhope
+  - jimin
