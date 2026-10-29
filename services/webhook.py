@@ -29,24 +29,29 @@ WEBHOOKS = [
 if not WEBHOOKS:
     raise RuntimeError("WEBHOOKS is not configured.")
 
+
 def send_to_all(**kwargs):
     for webhook in WEBHOOKS:
         new_kwargs = kwargs.copy()
+        files_to_close = []
 
         if "file" in kwargs:
             path = kwargs["file"].fp.name
             new_kwargs["file"] = discord.File(path)
+            files_to_close.append(new_kwargs["file"])
 
         elif "files" in kwargs:
             new_kwargs["files"] = [
-                discord.File(path)
-                for path in (
-                    file.fp.name
-                    for file in kwargs["files"]
-                )
+                discord.File(file.fp.name)
+                for file in kwargs["files"]
             ]
+            files_to_close.extend(new_kwargs["files"])
 
-        webhook.send(**new_kwargs)
+        try:
+            webhook.send(**new_kwargs)
+        finally:
+            for discord_file in files_to_close:
+                discord_file.close()
 
 def notify(post):
     if "caption" not in post:
@@ -192,145 +197,175 @@ def notify(post):
         return
 
     description = post["caption"]
-
     media = post.get("media", [])
-    video_path = None
-    image_paths = []
-    thumbnail_path = None
+    media_paths = []
+    fallback_thumbnail_paths = []
+    downloaded_media = []
 
-    if media:
-        first = media[0]
+    from fetchers.instagram import resolve_video_url
 
-        if first.get("is_video"):
-            video_url = first.get("video_url")
+    try:
+        # Download up to 10 items, preserving carousel order.
+        for item in media[:10]:
+            is_video = item.get("is_video", False)
+            media_url = (
+                item.get("video_url")
+                if is_video
+                else item.get("url")
+            )
 
-            if video_url:
-                response = requests.get(
-                    video_url,
-                    timeout=60
+            if is_video and not media_url:
+                media_url = resolve_video_url(
+                    item.get("shortcode")
                 )
 
-                response.raise_for_status()
+            if not media_url:
+                log(
+                    "Instagram media skipped: "
+                    f"no usable URL for {item.get('shortcode')}"
+                )
+                continue
 
-                with tempfile.NamedTemporaryFile(
-                    delete=False,
-                    suffix=".mp4"
-                ) as f:
-                    f.write(response.content)
-                    video_path = f.name
-
-            description += "\n\n🎬 Video/Reel"
-
-        else:
-            for item in media[:10]:
-                if item.get("is_video"):
-                    continue
-
-                image_url = item.get("url")
-                if not image_url:
-                    continue
-
+            try:
                 response = requests.get(
-                    image_url,
+                    media_url,
                     timeout=60,
                 )
                 response.raise_for_status()
 
+                suffix = ".mp4" if is_video else ".jpg"
                 with tempfile.NamedTemporaryFile(
                     delete=False,
-                    suffix=".jpg",
+                    suffix=suffix,
                 ) as f:
                     f.write(response.content)
-                    image_paths.append(f.name)
+                    path = f.name
 
-    link = f"\n\n{post['url']}"
-    description = description[:4096 - len(link)] + link
+                media_paths.append(path)
+                downloaded_media.append((item, path, is_video))
 
-    embed = discord.Embed(
-        description=description,
-        color=0xd58af4,
-    )
+            except Exception as exc:
+                log(
+                    "Instagram media download failed "
+                    f"for {item.get('shortcode')}: {exc}"
+                )
 
-    embed.set_author(
-        name=f"{post['username']}",
-        url=post["url"],
-        icon_url="https://raw.githubusercontent.com/pinkabels/bangtan-feed/main/assets/logo-instagram.png"
-    )
+        if any(is_video for _, _, is_video in downloaded_media):
+            description += "\n\n🎬 Video/Reel"
 
-    if post.get("timestamp"):
-        dt = datetime.fromtimestamp(
-            post["timestamp"],
-            tz=timezone.utc
-        ).astimezone(KST)
+        # Preserve the existing embed formatting.
+        link = f"\n\n{post['url']}"
+        description = description[:4096 - len(link)] + link
 
-        embed.set_footer(
-            text=(
-                f"Instagram • "
-                f"{dt:%Y-%m-%d at %H:%M} "
-                f"{dt.tzname()} • pinkabels 💗"
-            )
+        embed = discord.Embed(
+            description=description,
+            color=0xd58af4,
+        )
+        embed.set_author(
+            name=f"{post['username']}",
+            url=post["url"],
+            icon_url=(
+                "https://raw.githubusercontent.com/pinkabels/"
+                "bangtan-feed/main/assets/logo-instagram.png"
+            ),
         )
 
-    try:
-        if video_path:
+        if post.get("timestamp"):
+            dt = datetime.fromtimestamp(
+                post["timestamp"],
+                tz=timezone.utc,
+            ).astimezone(KST)
+
+            embed.set_footer(
+                text=(
+                    f"Instagram • "
+                    f"{dt:%Y-%m-%d at %H:%M} "
+                    f"{dt.tzname()} • pinkabels 💗"
+                )
+            )
+
+        if not downloaded_media:
+            send_to_all(embed=embed)
+        else:
+            discord_files = []
             try:
+                discord_files = [
+                    discord.File(path)
+                    for _, path, _ in downloaded_media
+                ]
                 send_to_all(
                     embed=embed,
-                    file=discord.File(video_path)
+                    files=discord_files,
                 )
-            except discord.HTTPException as e:
-                log(f"Discord upload failed: {e}")
 
-                # Video too large: show the thumbnail instead.
-                if media:
-                    thumbnail_url = media[0]["url"]
+            except discord.HTTPException as exc:
+                log(f"Discord carousel upload failed: {exc}")
 
-                    response = requests.get(
-                        thumbnail_url,
-                        timeout=60,
-                    )
-                    response.raise_for_status()
+                # Retry with images and video thumbnails in carousel order.
+                fallback_paths = []
 
-                    with tempfile.NamedTemporaryFile(
-                        delete=False,
-                        suffix=".jpg",
-                    ) as f:
-                        f.write(response.content)
-                        thumbnail_path = f.name
+                for item, path, is_video in downloaded_media:
+                    if not is_video:
+                        fallback_paths.append(path)
+                        continue
 
+                    thumbnail_url = item.get("url")
+                    if not thumbnail_url:
+                        continue
+
+                    try:
+                        response = requests.get(
+                            thumbnail_url,
+                            timeout=60,
+                        )
+                        response.raise_for_status()
+
+                        with tempfile.NamedTemporaryFile(
+                            delete=False,
+                            suffix=".jpg",
+                        ) as f:
+                            f.write(response.content)
+                            thumbnail_path = f.name
+
+                        fallback_thumbnail_paths.append(thumbnail_path)
+                        fallback_paths.append(thumbnail_path)
+
+                    except Exception as fallback_exc:
+                        log(
+                            "Instagram video thumbnail download failed: "
+                            f"{fallback_exc}"
+                        )
+
+                fallback_files = []
                 try:
-                    if thumbnail_path:
+                    if fallback_paths:
+                        fallback_files = [
+                            discord.File(path)
+                            for path in fallback_paths
+                        ]
                         send_to_all(
                             embed=embed,
-                            files=[
-                                discord.File(thumbnail_path),
-                            ],
+                            files=fallback_files,
                         )
+                        log("[INFO] Sent Instagram media fallback.")
                     else:
                         send_to_all(embed=embed)
 
-                    log("[INFO] Sent thumbnail fallback.")
-                except Exception:
-                    import traceback
-                    log(traceback.format_exc())
+                except Exception as fallback_exc:
+                    log(
+                        "Instagram media fallback failed: "
+                        f"{fallback_exc}"
+                    )
 
-        elif image_paths:
-            send_to_all(
-                embed=embed,
-                files=[
-                    discord.File(path)
-                    for path in image_paths
-                ],
-            )
-        else:
-            send_to_all(embed=embed)                    
+                finally:
+                    for discord_file in fallback_files:
+                        discord_file.close()
+
+            finally:
+                for discord_file in discord_files:
+                    discord_file.close()
 
     finally:
-        if video_path:
-            os.remove(video_path)
-
-        for path in image_paths:
-            os.remove(path)
-
-        if thumbnail_path:
-            os.remove(thumbnail_path)
+        for path in media_paths + fallback_thumbnail_paths:
+            if os.path.exists(path):
+                os.remove(path)

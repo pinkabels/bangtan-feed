@@ -5,128 +5,197 @@
 # fetchers/instagram.py
 # ----------------------------
 import json
+import re
 import subprocess
+import requests
+
 from services.logger import log
 
 
-def best_image_url(media):
-    candidates = (
-        media.get("image_versions2", {})
-        .get("candidates", [])
+def _decode_embedded(value):
+    """Decode escaped slashes and Unicode in Instagram's embedded data."""
+    if not isinstance(value, str):
+        return value
+
+    value = value.replace(r"\/", "/")
+
+    # Decode Unicode escapes, including UTF-16 surrogate pairs.
+    pattern = re.compile(
+        r"\\u([0-9a-fA-F]{4})(?:\\u([0-9a-fA-F]{4}))?"
     )
 
-    if not candidates:
-        return media.get("display_uri")
+    def replace_escape(match):
+        first = int(match.group(1), 16)
+        second_text = match.group(2)
 
-    return max(
-        candidates,
-        key=lambda item: (
-            item.get("width", 0) * item.get("height", 0)
-        ),
-    ).get("url")
+        if (
+            second_text
+            and 0xD800 <= first <= 0xDBFF
+        ):
+            second = int(second_text, 16)
+            if 0xDC00 <= second <= 0xDFFF:
+                return chr(
+                    0x10000
+                    + ((first - 0xD800) << 10)
+                    + (second - 0xDC00)
+                )
 
+        result = chr(first)
 
-def video_url(media):
-    versions = media.get("video_versions", [])
+        if second_text:
+            result += chr(int(second_text, 16))
 
-    if not versions:
+        return result
+
+    return pattern.sub(replace_escape, value)
+
+def _parse_embed_html(html):
+    """Extract recent post records from a public Instagram embed page."""
+    marker = r'graphql_media\":['
+    pos = html.find(marker)
+
+    if pos < 0:
+        raise ValueError("graphql_media data not found in embed HTML")
+
+    # The data is JSON escaped inside Instagram's HTML.
+    raw = html[pos + len(marker) - 1:]
+    decoded = raw.replace(r'\"', '"')
+
+    entries, _ = json.JSONDecoder().raw_decode(decoded)
+
+    if not isinstance(entries, list):
+        raise ValueError("Unexpected graphql_media structure")
+
+    posts = []
+
+    for entry in entries[:10]:
+        item = entry.get("shortcode_media", {})
+
+        if not isinstance(item, dict):
+            continue
+
+        shortcode = item.get("shortcode")
+        if not shortcode:
+            continue
+
+        caption_edges = (
+            item.get("edge_media_to_caption", {})
+            .get("edges", [])
+        )
+        caption = ""
+
+        if caption_edges:
+            caption = caption_edges[0].get("node", {}).get("text", "")
+
+        caption = _decode_embedded(caption)
+        caption = caption.replace(r"\n", "\n")
+
+        children = (
+            item.get("edge_sidecar_to_children", {})
+            .get("edges", [])
+        )
+
+        media_items = (
+            [child.get("node", {}) for child in children]
+            if children
+            else [item]
+        )
+
+        media = []
+
+        for child in media_items:
+            image_url = _decode_embedded(child.get("display_url"))
+            raw_video_url = child.get("video_url")
+            resolved_video_url = _decode_embedded(raw_video_url)
+
+            media.append({
+                "url": image_url,
+                "video_url": resolved_video_url,
+                "shortcode": child.get("shortcode"),
+                "is_video": bool(child.get("is_video")),
+            })
+
+        posts.append({
+            "platform": "instagram",
+            "username": None,
+            "post_id": shortcode,
+            "url": f"https://www.instagram.com/p/{shortcode}/",
+            "caption": caption,
+            "media": media,
+            "timestamp": item.get("taken_at_timestamp"),
+        })
+
+    return posts
+
+def resolve_video_url(shortcode):
+    """Resolve a video's MP4 URL from its individual Instagram embed."""
+    if not shortcode:
         return None
 
-    # Instagram currently returns multiple encodings
-    # at the same resolution. Use the first standard variant.
-    return versions[0].get("url")
+    url = f"https://www.instagram.com/p/{shortcode}/embed/"
 
+    try:
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://www.instagram.com/",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
 
-def make_media(media):
-    videos = media.get("video_versions", [])
+        match = re.search(
+            r'video_url\\":\\"(.*?)\\"',
+            response.text,
+        )
+        if not match:
+            log(f"Instagram video URL not found for {shortcode}")
+            return None
 
-    if videos:
-        return {
-            "url": best_image_url(media),
-            "video_url": video_url(media),
-            "is_video": True,
-        }
+        video_url = re.sub(r"\\+/", "/", match.group(1))
 
-    return {
-        "url": best_image_url(media),
-        "video_url": None,
-        "is_video": False,
-    }
+        if (
+            not video_url.startswith("https://")
+            or not video_url.split("?", 1)[0].endswith(".mp4")
+        ):
+            log(f"Invalid Instagram video URL for {shortcode}")
+            return None
 
+        return video_url
+
+    except Exception as exc:
+        log(f"Instagram video resolution failed for {shortcode}: {exc}")
+        return None
 
 def fetch(username):
-    url = (
-        "https://www.instagram.com/api/v1/"
-        f"feed/user/{username}/username/?count=10"
-    )
+    url = f"https://www.instagram.com/{username}/embed/"
 
     cmd = [
         "curl",
         "-4",
-        "-s",
-        "-H", "User-Agent: Mozilla/5.0",
-        "-H", "X-IG-App-ID: 936619743392459",
+        "-fsS",
+        "--max-time", "30",
+        "-A", "Mozilla/5.0",
         "-H", "Referer: https://www.instagram.com/",
         url,
     ]
 
     try:
-        out = subprocess.check_output(
-            cmd,
-            timeout=30,
-        )
-        data = json.loads(out)
+        out = subprocess.check_output(cmd, timeout=35)
+        html = out.decode("utf-8", errors="replace")
+        posts = _parse_embed_html(html)
 
-    except Exception as e:
-        log(f"Instagram error {username}: {e}")
+    except Exception as exc:
+        log(f"Instagram embed error {username}: {exc}")
         return []
 
-    if "items" not in data:
-        log(f"Instagram returned an unexpected response for {username}:")
-        log("Response:")
-        log(json.dumps(data, indent=2)[:1000])
-        return []
+    # Set the requested username on every normalized post.
+    for post in posts:
+        post["username"] = username
 
-    posts = []
-
-    for item in data.get("items", [])[:10]:
-        shortcode = item.get("code")
-
-        if not shortcode:
-            continue
-
-        caption_data = item.get("caption")
-        caption = ""
-
-        if isinstance(caption_data, dict):
-            caption = caption_data.get("text", "")
-        elif isinstance(caption_data, str):
-            caption = caption_data
-
-        carousel = item.get("carousel_media", [])
-
-        if carousel:
-            media = [
-                make_media(child)
-                for child in carousel
-            ]
-        else:
-            media = [
-                make_media(item)
-            ]
-
-        posts.append({
-            "platform": "instagram",
-            "username": username,
-            "post_id": shortcode,
-            "url": (
-                f"https://www.instagram.com/p/"
-                f"{shortcode}/"
-            ),
-            "caption": caption,
-            "media": media,
-            "timestamp": item.get("taken_at"),
-        })
+    if not posts:
+        log(f"Instagram embed returned no usable posts for {username}")
 
     return posts
 
