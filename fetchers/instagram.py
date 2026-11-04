@@ -57,24 +57,112 @@ def _parse_embed_html(html):
     if pos < 0:
         raise ValueError("graphql_media data not found in embed HTML")
 
-    # The data is JSON escaped inside Instagram's HTML.
-    raw = html[pos + len(marker) - 1:]
-    decoded = raw.replace(r'\"', '"')
+    script_start = html.rfind("<script", 0, pos)
 
-    entries, _ = json.JSONDecoder().raw_decode(decoded)
+    if script_start < 0:
+        raise ValueError("Containing script not found")
 
-    if not isinstance(entries, list):
-        raise ValueError("Unexpected graphql_media structure")
+    # Locate the JavaScript string containing graphql_media.
+    in_string = False
+    escaped = False
+    quote_start = None
+
+    for i in range(script_start, pos + len(marker)):
+        char = html[i]
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+            quote_start = i
+
+    if not in_string or quote_start is None:
+        raise ValueError("Containing JavaScript string not found")
+
+    # Locate the end of that string.
+    escaped = False
+    quote_end = None
+
+    for i in range(pos + len(marker), len(html)):
+        char = html[i]
+
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            quote_end = i
+            break
+
+    if quote_end is None:
+        raise ValueError("Containing JavaScript string is unterminated")
+
+    # Decode the complete serialized payload.
+    try:
+        payload = json.loads(html[quote_start:quote_end + 1])
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Could not decode Instagram payload: {exc}"
+        ) from exc
+
+    # graphql_media may be nested inside JSON-encoded context strings.
+    def find_media(value, depth=0):
+        if depth > 8:
+            return None
+
+        if isinstance(value, dict):
+            entries = value.get("graphql_media")
+
+            if isinstance(entries, list):
+                return entries
+
+            for child in value.values():
+                result = find_media(child, depth + 1)
+                if result is not None:
+                    return result
+
+        elif isinstance(value, list):
+            for child in value:
+                result = find_media(child, depth + 1)
+                if result is not None:
+                    return result
+
+        elif isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except (ValueError, TypeError):
+                return None
+
+            if decoded == value:
+                return None
+
+            return find_media(decoded, depth + 1)
+
+        return None
+
+    entries = find_media(payload)
+
+    if entries is None:
+        raise ValueError("graphql_media not found in decoded Instagram payload")
 
     posts = []
 
     for entry in entries[:10]:
+        if not isinstance(entry, dict):
+            continue
+
         item = entry.get("shortcode_media", {})
 
         if not isinstance(item, dict):
             continue
 
         shortcode = item.get("shortcode")
+
         if not shortcode:
             continue
 
